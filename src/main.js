@@ -50,7 +50,8 @@ const HISTORY_LIMIT = 100;
 
 const SPECTRUM_POINTS = 220;
 const FREQ_SLIDER_MAX = 1000;
-let spectrumSmooth = new Float32Array(SPECTRUM_POINTS);
+let spectrumSmoothPre = new Float32Array(SPECTRUM_POINTS);
+let spectrumSmoothPost = new Float32Array(SPECTRUM_POINTS);
 let preRmsSmooth = -96;
 let postRmsSmooth = -96;
 
@@ -115,6 +116,23 @@ function sliderToFrequency(sliderValue, type) {
 
 function sanitizeDigits(value) {
   return String(value ?? "").replace(/[^\d]/g, "");
+}
+
+function supportsGain(type) {
+  return ["peaking", "lowshelf", "highshelf"].includes(type);
+}
+
+function gainFieldMarkup(band) {
+  if (!supportsGain(band.type)) {
+    return "";
+  }
+  return `
+        <label class="field control-tip" data-tip="Ganancia en dB de esta banda.">
+          <span>Gain</span>
+          <input type="range" data-action="gain" min="-24" max="24" step="0.1" value="${band.gain.toFixed(1)}" />
+          <span class="readout">${formatDb(band.gain)} dB</span>
+        </label>
+  `;
 }
 
 function snapshotsDiffer(a, b) {
@@ -213,30 +231,26 @@ function makeBandRow(band, selectedBandId) {
         <label title="Activa o desactiva esta banda sin borrarla."><input type="checkbox" data-action="enabled" ${band.enabled ? "checked" : ""}> On</label>
       </div>
       <div class="band-grid">
-        <label class="field" title="Tipo de filtro de la banda: peaking, shelf, pass o notch.">
+        <label class="field control-tip" data-tip="Tipo de filtro de la banda.">
           <span>Type</span>
-          <select data-action="type" title="Selecciona el tipo de filtro para esta banda.">
+          <select data-action="type">
             ${FILTER_TYPES.map((type) => `<option value="${type}" ${type === band.type ? "selected" : ""}>${type}</option>`).join("")}
           </select>
           <span class="readout"></span>
         </label>
 
-        <label class="field freq-field" title="Frecuencia central o corte del filtro en Hz (escala log para mayor precisión).">
+        <label class="field freq-field control-tip" data-tip="Frecuencia en escala log para ajuste fino.">
           <span>Freq</span>
-          <input type="range" data-action="frequency" min="0" max="${FREQ_SLIDER_MAX}" step="1" value="${sliderValue}" title="Ajusta la frecuencia de esta banda con curva logarítmica." />
-          <input type="text" data-action="frequencyText" inputmode="numeric" pattern="[0-9]*" value="${Math.round(band.frequency)}" title="Escribe Hz manualmente. Solo números." />
+          <input type="range" data-action="frequency" min="0" max="${FREQ_SLIDER_MAX}" step="1" value="${sliderValue}" />
+          <input type="text" data-action="frequencyText" inputmode="numeric" pattern="[0-9]*" value="${Math.round(band.frequency)}" />
           <span class="readout">${formatHz(band.frequency)} Hz</span>
         </label>
 
-        <label class="field" title="Ganancia en dB. No aplica para lowpass/highpass.">
-          <span>Gain</span>
-          <input type="range" data-action="gain" min="-24" max="24" step="0.1" value="${band.gain.toFixed(1)}" ${["lowpass", "highpass"].includes(band.type) ? "disabled" : ""} title="Sube o baja el nivel de esta banda en dB." />
-          <span class="readout">${formatDb(band.gain)} dB</span>
-        </label>
+        ${gainFieldMarkup(band)}
 
-        <label class="field" title="Q define el ancho de banda: alto = más estrecho.">
+        <label class="field control-tip" data-tip="Q controla el ancho: alto es más estrecho.">
           <span>Q</span>
-          <input type="range" data-action="q" min="0.1" max="18" step="0.01" value="${band.q.toFixed(2)}" title="Controla el ancho de banda (Q)." />
+          <input type="range" data-action="q" min="0.1" max="18" step="0.01" value="${band.q.toFixed(2)}" />
           <span class="readout">${formatQ(band.q)}</span>
         </label>
       </div>
@@ -288,18 +302,19 @@ function maybeLoudnessMatch(fromBands, toBands) {
 
 function drawSpectrumFrame() {
   const mode = analyzerMode.value;
-  const analyser = engine.getAnalyser(mode);
   const preAnalyser = engine.getAnalyser("pre");
   const postAnalyser = engine.getAnalyser("post");
 
-  if (!analyser || !preAnalyser || !postAnalyser) {
+  if (!preAnalyser || !postAnalyser) {
     requestAnimationFrame(drawSpectrumFrame);
     return;
   }
 
-  const bins = analyser.frequencyBinCount;
-  const data = new Uint8Array(bins);
-  analyser.getByteFrequencyData(data);
+  const bins = preAnalyser.frequencyBinCount;
+  const preData = new Uint8Array(bins);
+  const postData = new Uint8Array(bins);
+  preAnalyser.getByteFrequencyData(preData);
+  postAnalyser.getByteFrequencyData(postData);
 
   const width = analyzerCanvas.width;
   const height = analyzerCanvas.height;
@@ -311,7 +326,8 @@ function drawSpectrumFrame() {
 
   analyzerCtx.clearRect(0, 0, width, height);
   drawSpectrumGrid(width, height);
-  analyzerCtx.beginPath();
+  const prePath = new Path2D();
+  const postPath = new Path2D();
 
   for (let i = 0; i < SPECTRUM_POINTS; i += 1) {
     const ratio = i / (SPECTRUM_POINTS - 1);
@@ -320,27 +336,41 @@ function drawSpectrumFrame() {
     const low = Math.floor(bin);
     const high = Math.min(bins - 1, low + 1);
     const fract = bin - low;
-    const linear = data[low] * (1 - fract) + data[high] * fract;
-    const normalized = linear / 255;
+    const preLinear = preData[low] * (1 - fract) + preData[high] * fract;
+    const postLinear = postData[low] * (1 - fract) + postData[high] * fract;
+    const preNormalized = preLinear / 255;
+    const postNormalized = postLinear / 255;
 
     const rise = 0.34;
     const fall = 0.14;
-    const current = spectrumSmooth[i] || 0;
-    const alpha = normalized > current ? rise : fall;
-    spectrumSmooth[i] = current + (normalized - current) * alpha;
+
+    const currentPre = spectrumSmoothPre[i] || 0;
+    const alphaPre = preNormalized > currentPre ? rise : fall;
+    spectrumSmoothPre[i] = currentPre + (preNormalized - currentPre) * alphaPre;
+
+    const currentPost = spectrumSmoothPost[i] || 0;
+    const alphaPost = postNormalized > currentPost ? rise : fall;
+    spectrumSmoothPost[i] = currentPost + (postNormalized - currentPost) * alphaPost;
 
     const x = ratio * width;
-    const y = height - spectrumSmooth[i] * height;
+    const yPre = height - spectrumSmoothPre[i] * height;
+    const yPost = height - spectrumSmoothPost[i] * height;
     if (i === 0) {
-      analyzerCtx.moveTo(x, y);
+      prePath.moveTo(x, yPre);
+      postPath.moveTo(x, yPost);
     } else {
-      analyzerCtx.lineTo(x, y);
+      prePath.lineTo(x, yPre);
+      postPath.lineTo(x, yPost);
     }
   }
 
-  analyzerCtx.strokeStyle = mode === "pre" ? "#d1a05a" : "#5fb6ff";
-  analyzerCtx.lineWidth = 1.6;
-  analyzerCtx.stroke();
+  analyzerCtx.strokeStyle = mode === "pre" ? "rgba(95,182,255,0.35)" : "rgba(95,182,255,0.95)";
+  analyzerCtx.lineWidth = mode === "post" ? 1.9 : 1.3;
+  analyzerCtx.stroke(postPath);
+
+  analyzerCtx.strokeStyle = mode === "pre" ? "rgba(209,160,90,0.95)" : "rgba(209,160,90,0.35)";
+  analyzerCtx.lineWidth = mode === "pre" ? 1.9 : 1.3;
+  analyzerCtx.stroke(prePath);
 
   const rawPreDb = sampleRmsDb(preAnalyser);
   const rawPostDb = sampleRmsDb(postAnalyser);
@@ -550,11 +580,22 @@ resetBtn.addEventListener("click", () => {
 });
 
 applyPresetBtn.addEventListener("click", () => {
+  applySelectedPreset();
+});
+
+presetSelect.addEventListener("change", () => {
+  applySelectedPreset();
+});
+
+function applySelectedPreset() {
   const preset = getPresetByName(presetSelect.value);
   runTrackedUpdate(() => {
     store.loadPreset(preset);
   });
-});
+
+  // Hard-sync panel and graph from canonical state after preset load.
+  render(store.getState());
+}
 
 exportPresetBtn.addEventListener("click", () => {
   const preset = store.exportPreset("Exported preset");

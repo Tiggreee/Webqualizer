@@ -250,6 +250,34 @@ input[type="number"] {
   align-items: center;
 }
 
+.control-tip {
+  position: relative;
+}
+
+.control-tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  bottom: 100%;
+  transform: translateY(-4px);
+  max-width: 220px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #c4cedf;
+  background: rgba(10, 14, 22, 0.94);
+  border: 1px solid #2b364b;
+  border-radius: 4px;
+  padding: 3px 5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 110ms ease;
+  z-index: 30;
+}
+
+.control-tip:hover::after {
+  opacity: 1;
+}
+
 .field.freq-field {
   grid-template-columns: 54px 1fr 78px 56px;
 }
