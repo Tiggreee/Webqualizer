@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Webqualizer</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="top-bar">
+        <div class="transport-group">
+          <button id="playPauseBtn" class="btn">Play</button>
+          <button id="stopBtn" class="btn">Stop</button>
+          <label class="file-label btn" for="fileInput">Load Audio</label>
+          <input id="fileInput" type="file" accept="audio/*" hidden />
+          <div class="stream-load">
+            <input id="streamUrl" type="url" placeholder="https://.../stream.mp3" />
+            <button id="loadStreamBtn" class="btn">Load Stream</button>
+          </div>
+        </div>
+
+        <div class="status-group">
+          <div class="status-item">
+            <span>Master</span>
+            <input id="masterVolume" type="range" min="0" max="1" step="0.01" value="0.8" />
+          </div>
+          <button id="globalBypassBtn" class="btn">Global Bypass: Off</button>
+          <button id="resetBtn" class="btn">Reset</button>
+        </div>
+      </header>
+
+      <main class="main-content">
+        <section class="graph-section" id="dropZone">
+          <canvas id="eqCanvas" width="1200" height="520"></canvas>
+          <div class="timeline-wrap">
+            <span id="currentTime">00:00</span>
+            <input id="timeline" type="range" min="0" max="100" step="0.1" value="0" />
+            <span id="duration">00:00</span>
+          </div>
+          <p class="drop-hint">Arrastra un archivo de audio aquí o usa Load Audio.</p>
+        </section>
+
+        <aside class="side-panel">
+          <section class="panel-block">
+            <h2>A/B Compare</h2>
+            <div class="preset-controls">
+              <button id="storeABtn" class="btn">Store A</button>
+              <button id="loadABtn" class="btn">Load A</button>
+            </div>
+            <div class="preset-controls">
+              <button id="storeBBtn" class="btn">Store B</button>
+              <button id="loadBBtn" class="btn">Load B</button>
+            </div>
+            <label class="toggle-row">
+              <input id="loudnessMatch" type="checkbox" checked />
+              <span>Loudness match (aprox.)</span>
+            </label>
+          </section>
+
+          <section class="panel-block">
+            <h2>Spectrum</h2>
+            <div class="preset-controls">
+              <select id="analyzerMode">
+                <option value="post">Post EQ</option>
+                <option value="pre">Pre EQ</option>
+              </select>
+            </div>
+            <canvas id="analyzerCanvas" width="320" height="110"></canvas>
+          </section>
+
+          <section class="panel-block">
+            <h2>Presets</h2>
+            <div class="preset-controls">
+              <select id="presetSelect"></select>
+              <button id="applyPresetBtn" class="btn">Apply</button>
+            </div>
+            <div class="preset-controls">
+              <button id="exportPresetBtn" class="btn">Export JSON</button>
+              <label class="file-label btn" for="importPresetInput">Import JSON</label>
+              <input id="importPresetInput" type="file" accept="application/json" hidden />
+            </div>
+          </section>
+
+          <section class="panel-block">
+            <h2>Bands</h2>
+            <div id="bandsContainer" class="bands-container"></div>
+          </section>
+        </aside>
+      </main>
+
+      <audio id="player" crossorigin="anonymous"></audio>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
