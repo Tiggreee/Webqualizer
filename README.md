@@ -16,14 +16,13 @@ Parametric EQ web app built with the Web Audio API.
 Serve this folder with any static server:
 
 ```bash
-python -m http.server 5500
+py -m http.server 5500
 ```
 
 Then open http://localhost:5500
 
 ## Deploy to GitHub Pages
-This repo includes `.github/workflows/deploy-pages.yml`.
-
 1. Push repository to GitHub.
-2. In GitHub: Settings -> Pages -> Build and deployment -> Source: `GitHub Actions`.
-3. Push to `main` to trigger deployment.
+2. In GitHub: Settings -> Pages -> Build and deployment -> Source: `Deploy from a branch`.
+3. Select branch `main` and folder `/ (root)`.
+4. Save and wait 1-2 minutes for publishing.

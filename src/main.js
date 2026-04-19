@@ -336,13 +336,47 @@ loadBBtn.addEventListener("click", () => {
 });
 
 function loadAudioSource(url) {
-  if (objectUrl) {
+  if (objectUrl && objectUrl !== url) {
     URL.revokeObjectURL(objectUrl);
-    objectUrl = null;
   }
 
+  objectUrl = url.startsWith("blob:") ? url : null;
   player.src = url;
   player.load();
+}
+
+function waitForMediaReady() {
+  return new Promise((resolve, reject) => {
+    const onReady = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = () => {
+      cleanup();
+      reject(new Error("No se pudo cargar el audio."));
+    };
+    const cleanup = () => {
+      player.removeEventListener("loadedmetadata", onReady);
+      player.removeEventListener("canplay", onReady);
+      player.removeEventListener("error", onError);
+    };
+
+    player.addEventListener("loadedmetadata", onReady, { once: true });
+    player.addEventListener("canplay", onReady, { once: true });
+    player.addEventListener("error", onError, { once: true });
+  });
+}
+
+async function loadAndPrimeAudio(url) {
+  loadAudioSource(url);
+  await waitForMediaReady();
+  await ensureAudioReady();
+
+  try {
+    await player.play();
+  } catch {
+    // Some browsers may still block playback; user can press Play manually.
+  }
 }
 
 fileInput.addEventListener("change", async () => {
@@ -350,9 +384,13 @@ fileInput.addEventListener("change", async () => {
   if (!file) {
     return;
   }
-  objectUrl = URL.createObjectURL(file);
-  loadAudioSource(objectUrl);
-  await ensureAudioReady();
+  const fileUrl = URL.createObjectURL(file);
+  try {
+    await loadAndPrimeAudio(fileUrl);
+  } catch (error) {
+    alert(error.message);
+  }
+  fileInput.value = "";
 });
 
 loadStreamBtn.addEventListener("click", async () => {
@@ -360,8 +398,11 @@ loadStreamBtn.addEventListener("click", async () => {
   if (!url) {
     return;
   }
-  loadAudioSource(url);
-  await ensureAudioReady();
+  try {
+    await loadAndPrimeAudio(url);
+  } catch (error) {
+    alert(`${error.message} Verifica URL o CORS.`);
+  }
 });
 
 dropZone.addEventListener("dragover", (event) => {
@@ -382,9 +423,12 @@ dropZone.addEventListener("drop", async (event) => {
     return;
   }
 
-  objectUrl = URL.createObjectURL(file);
-  loadAudioSource(objectUrl);
-  await ensureAudioReady();
+  const fileUrl = URL.createObjectURL(file);
+  try {
+    await loadAndPrimeAudio(fileUrl);
+  } catch (error) {
+    alert(error.message);
+  }
 });
 
 populatePresets();
