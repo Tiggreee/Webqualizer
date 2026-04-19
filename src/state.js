@@ -120,6 +120,21 @@ export function createStore(initialState) {
         return draft;
       });
     },
+
+    replaceState(snapshot) {
+      update(() => {
+        const bands = Array.isArray(snapshot?.bands)
+          ? snapshot.bands.map((band, index) => makeBand(index + 1, band))
+          : createDefaultBands();
+
+        return {
+          masterVolume: clamp(snapshot?.masterVolume ?? 0.8, 0, 1),
+          globalBypass: Boolean(snapshot?.globalBypass),
+          bands,
+          selectedBandId: bands.find((band) => band.id === snapshot?.selectedBandId)?.id ?? bands[0]?.id ?? null,
+        };
+      });
+    },
   };
 }
 

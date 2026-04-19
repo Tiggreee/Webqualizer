@@ -13,6 +13,7 @@ export class AudioEngine {
     this.bypassWet = null;
     this.preAnalyser = null;
     this.postAnalyser = null;
+    this.outputTrim = null;
   }
 
   async ensureReady() {
@@ -34,6 +35,7 @@ export class AudioEngine {
     this.preAnalyser.fftSize = 2048;
     this.postAnalyser = this.context.createAnalyser();
     this.postAnalyser.fftSize = 2048;
+    this.outputTrim = this.context.createGain();
 
     const bandCount = 6;
     this.bands = Array.from({ length: bandCount }, () => this.context.createBiquadFilter());
@@ -54,7 +56,8 @@ export class AudioEngine {
     this.bypassWet.connect(this.masterGain);
 
     this.masterGain.connect(this.postAnalyser);
-    this.masterGain.connect(this.context.destination);
+    this.masterGain.connect(this.outputTrim);
+    this.outputTrim.connect(this.context.destination);
   }
 
   getFilters() {
@@ -67,6 +70,15 @@ export class AudioEngine {
 
   getAnalyser(mode = "post") {
     return mode === "pre" ? this.preAnalyser : this.postAnalyser;
+  }
+
+  setOutputTrimDb(db) {
+    if (!this.context || !this.outputTrim) {
+      return;
+    }
+    const now = this.context.currentTime;
+    const linear = 10 ** (db / 20);
+    this.outputTrim.gain.setTargetAtTime(linear, now, SMOOTH_TIME);
   }
 
   applyState(state) {

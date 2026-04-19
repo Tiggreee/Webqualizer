@@ -26,6 +26,20 @@
             <span>Master</span>
             <input id="masterVolume" type="range" min="0" max="1" step="0.01" value="0.8" />
           </div>
+          <div class="status-item meter-strip">
+            <span>Pre RMS</span>
+            <strong id="preRmsReadout">-inf dB</strong>
+          </div>
+          <div class="status-item meter-strip">
+            <span>Post RMS</span>
+            <strong id="postRmsReadout">-inf dB</strong>
+          </div>
+          <div class="status-item meter-strip">
+            <span>Trim</span>
+            <strong id="trimReadout">+0.0 dB</strong>
+          </div>
+          <button id="undoBtn" class="btn">Undo</button>
+          <button id="redoBtn" class="btn">Redo</button>
           <button id="globalBypassBtn" class="btn">Global Bypass: Off</button>
           <button id="resetBtn" class="btn">Reset</button>
         </div>
@@ -56,6 +70,10 @@
             <label class="toggle-row">
               <input id="loudnessMatch" type="checkbox" checked />
               <span>Loudness match (aprox.)</span>
+            </label>
+            <label class="toggle-row">
+              <input id="autoGain" type="checkbox" checked />
+              <span>Auto gain (RMS pre/post)</span>
             </label>
           </section>
 

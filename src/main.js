@@ -12,6 +12,11 @@ const dropZone = document.getElementById("dropZone");
 const streamUrl = document.getElementById("streamUrl");
 const loadStreamBtn = document.getElementById("loadStreamBtn");
 const masterVolume = document.getElementById("masterVolume");
+const preRmsReadout = document.getElementById("preRmsReadout");
+const postRmsReadout = document.getElementById("postRmsReadout");
+const trimReadout = document.getElementById("trimReadout");
+const undoBtn = document.getElementById("undoBtn");
+const redoBtn = document.getElementById("redoBtn");
 const globalBypassBtn = document.getElementById("globalBypassBtn");
 const resetBtn = document.getElementById("resetBtn");
 const timeline = document.getElementById("timeline");
@@ -26,6 +31,7 @@ const loadABtn = document.getElementById("loadABtn");
 const storeBBtn = document.getElementById("storeBBtn");
 const loadBBtn = document.getElementById("loadBBtn");
 const loudnessMatch = document.getElementById("loudnessMatch");
+const autoGain = document.getElementById("autoGain");
 const analyzerMode = document.getElementById("analyzerMode");
 const analyzerCanvas = document.getElementById("analyzerCanvas");
 const bandsContainer = document.getElementById("bandsContainer");
@@ -35,6 +41,17 @@ const analyzerCtx = analyzerCanvas.getContext("2d");
 let objectUrl = null;
 let slotA = null;
 let slotB = null;
+let trimDb = 0;
+
+const historyPast = [];
+const historyFuture = [];
+let historyBusy = false;
+const HISTORY_LIMIT = 100;
+
+const SPECTRUM_POINTS = 220;
+let spectrumSmooth = new Float32Array(SPECTRUM_POINTS);
+let preRmsSmooth = -96;
+let postRmsSmooth = -96;
 
 const store = createStore({
   masterVolume: 0.8,
@@ -48,6 +65,95 @@ const graph = new EqGraph(canvas, store, engine);
 
 function ensureAudioReady() {
   return engine.ensureReady();
+}
+
+function clampValue(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function dbLabel(value) {
+  if (!Number.isFinite(value)) {
+    return "-inf dB";
+  }
+  return `${value >= 0 ? "+" : ""}${value.toFixed(1)} dB`;
+}
+
+function snapshotsDiffer(a, b) {
+  return JSON.stringify(a) !== JSON.stringify(b);
+}
+
+function updateHistoryButtons() {
+  undoBtn.disabled = historyPast.length === 0;
+  redoBtn.disabled = historyFuture.length === 0;
+}
+
+function runTrackedUpdate(mutator) {
+  if (historyBusy) {
+    mutator();
+    return;
+  }
+  const before = store.getState();
+  mutator();
+  const after = store.getState();
+  if (!snapshotsDiffer(before, after)) {
+    return;
+  }
+  historyPast.push(before);
+  if (historyPast.length > HISTORY_LIMIT) {
+    historyPast.shift();
+  }
+  historyFuture.length = 0;
+  updateHistoryButtons();
+}
+
+function restoreSnapshot(snapshot) {
+  historyBusy = true;
+  store.replaceState(snapshot);
+  historyBusy = false;
+}
+
+function sampleRmsDb(analyser) {
+  if (!analyser) {
+    return -96;
+  }
+  const buffer = new Uint8Array(analyser.fftSize);
+  analyser.getByteTimeDomainData(buffer);
+  let sum = 0;
+  for (let i = 0; i < buffer.length; i += 1) {
+    const s = (buffer[i] - 128) / 128;
+    sum += s * s;
+  }
+  const rms = Math.sqrt(sum / buffer.length);
+  return 20 * Math.log10(Math.max(rms, 1e-7));
+}
+
+function drawSpectrumGrid(width, height) {
+  analyzerCtx.strokeStyle = "#223043";
+  analyzerCtx.lineWidth = 1;
+  for (let i = 1; i < 5; i += 1) {
+    const y = (i / 5) * height;
+    analyzerCtx.beginPath();
+    analyzerCtx.moveTo(0, y);
+    analyzerCtx.lineTo(width, y);
+    analyzerCtx.stroke();
+  }
+}
+
+function updateAutoGain(preDb, postDb) {
+  if (!autoGain.checked) {
+    trimDb *= 0.85;
+    if (Math.abs(trimDb) < 0.05) {
+      trimDb = 0;
+    }
+    engine.setOutputTrimDb(trimDb);
+    trimReadout.textContent = dbLabel(trimDb);
+    return;
+  }
+
+  const target = clampValue(preDb - postDb, -9, 9);
+  trimDb = trimDb * 0.92 + target * 0.08;
+  engine.setOutputTrimDb(trimDb);
+  trimReadout.textContent = dbLabel(trimDb);
 }
 
 function populatePresets() {
@@ -105,6 +211,7 @@ function render(state) {
   globalBypassBtn.textContent = `Global Bypass: ${state.globalBypass ? "On" : "Off"}`;
   renderBands(state);
   graph.render(state);
+  updateHistoryButtons();
 }
 
 function cloneBands(bands) {
@@ -140,7 +247,10 @@ function maybeLoudnessMatch(fromBands, toBands) {
 function drawSpectrumFrame() {
   const mode = analyzerMode.value;
   const analyser = engine.getAnalyser(mode);
-  if (!analyser) {
+  const preAnalyser = engine.getAnalyser("pre");
+  const postAnalyser = engine.getAnalyser("post");
+
+  if (!analyser || !preAnalyser || !postAnalyser) {
     requestAnimationFrame(drawSpectrumFrame);
     return;
   }
@@ -149,31 +259,54 @@ function drawSpectrumFrame() {
   const data = new Uint8Array(bins);
   analyser.getByteFrequencyData(data);
 
-  analyzerCtx.clearRect(0, 0, analyzerCanvas.width, analyzerCanvas.height);
-  analyzerCtx.strokeStyle = "#243042";
-  analyzerCtx.lineWidth = 1;
+  const width = analyzerCanvas.width;
+  const height = analyzerCanvas.height;
+  const nyquist = (engine.getSampleRate() || 48000) / 2;
+  const minFreq = 20;
+  const maxFreq = Math.min(20000, nyquist);
+  const minLog = Math.log10(minFreq);
+  const maxLog = Math.log10(maxFreq);
 
-  for (let i = 1; i < 5; i += 1) {
-    const y = (i / 5) * analyzerCanvas.height;
-    analyzerCtx.beginPath();
-    analyzerCtx.moveTo(0, y);
-    analyzerCtx.lineTo(analyzerCanvas.width, y);
-    analyzerCtx.stroke();
-  }
-
+  analyzerCtx.clearRect(0, 0, width, height);
+  drawSpectrumGrid(width, height);
   analyzerCtx.beginPath();
-  for (let i = 0; i < bins; i += 1) {
-    const x = (i / (bins - 1)) * analyzerCanvas.width;
-    const y = analyzerCanvas.height - (data[i] / 255) * analyzerCanvas.height;
+
+  for (let i = 0; i < SPECTRUM_POINTS; i += 1) {
+    const ratio = i / (SPECTRUM_POINTS - 1);
+    const freq = 10 ** (minLog + ratio * (maxLog - minLog));
+    const bin = (freq / nyquist) * (bins - 1);
+    const low = Math.floor(bin);
+    const high = Math.min(bins - 1, low + 1);
+    const fract = bin - low;
+    const linear = data[low] * (1 - fract) + data[high] * fract;
+    const normalized = linear / 255;
+
+    const rise = 0.34;
+    const fall = 0.14;
+    const current = spectrumSmooth[i] || 0;
+    const alpha = normalized > current ? rise : fall;
+    spectrumSmooth[i] = current + (normalized - current) * alpha;
+
+    const x = ratio * width;
+    const y = height - spectrumSmooth[i] * height;
     if (i === 0) {
       analyzerCtx.moveTo(x, y);
     } else {
       analyzerCtx.lineTo(x, y);
     }
   }
-  analyzerCtx.strokeStyle = mode === "pre" ? "#c2a15a" : "#74b8ff";
-  analyzerCtx.lineWidth = 1.5;
+
+  analyzerCtx.strokeStyle = mode === "pre" ? "#d1a05a" : "#5fb6ff";
+  analyzerCtx.lineWidth = 1.6;
   analyzerCtx.stroke();
+
+  const rawPreDb = sampleRmsDb(preAnalyser);
+  const rawPostDb = sampleRmsDb(postAnalyser);
+  preRmsSmooth = preRmsSmooth * 0.86 + rawPreDb * 0.14;
+  postRmsSmooth = postRmsSmooth * 0.86 + rawPostDb * 0.14;
+  preRmsReadout.textContent = dbLabel(preRmsSmooth);
+  postRmsReadout.textContent = dbLabel(postRmsSmooth);
+  updateAutoGain(preRmsSmooth, postRmsSmooth);
 
   requestAnimationFrame(drawSpectrumFrame);
 }
@@ -197,15 +330,21 @@ bandsContainer.addEventListener("input", (event) => {
   const action = target.dataset.action;
 
   if (action === "frequency") {
-    store.updateBand(bandId, { frequency: Number(target.value) });
+    runTrackedUpdate(() => {
+      store.updateBand(bandId, { frequency: Number(target.value) });
+    });
     return;
   }
   if (action === "gain") {
-    store.updateBand(bandId, { gain: Number(target.value) });
+    runTrackedUpdate(() => {
+      store.updateBand(bandId, { gain: Number(target.value) });
+    });
     return;
   }
   if (action === "q") {
-    store.updateBand(bandId, { q: Number(target.value) });
+    runTrackedUpdate(() => {
+      store.updateBand(bandId, { q: Number(target.value) });
+    });
     return;
   }
 });
@@ -224,11 +363,15 @@ bandsContainer.addEventListener("change", (event) => {
   const action = target.dataset.action;
 
   if (action === "enabled") {
-    store.updateBand(bandId, { enabled: target.checked });
+    runTrackedUpdate(() => {
+      store.updateBand(bandId, { enabled: target.checked });
+    });
     return;
   }
   if (action === "type") {
-    store.updateBand(bandId, { type: target.value });
+    runTrackedUpdate(() => {
+      store.updateBand(bandId, { type: target.value });
+    });
   }
 });
 
@@ -241,7 +384,29 @@ bandsContainer.addEventListener("click", (event) => {
   if (!row) {
     return;
   }
-  store.setSelectedBand(Number(row.dataset.bandId));
+  runTrackedUpdate(() => {
+    store.setSelectedBand(Number(row.dataset.bandId));
+  });
+});
+
+undoBtn.addEventListener("click", () => {
+  if (historyPast.length === 0) {
+    return;
+  }
+  const previous = historyPast.pop();
+  historyFuture.push(store.getState());
+  restoreSnapshot(previous);
+  updateHistoryButtons();
+});
+
+redoBtn.addEventListener("click", () => {
+  if (historyFuture.length === 0) {
+    return;
+  }
+  const next = historyFuture.pop();
+  historyPast.push(store.getState());
+  restoreSnapshot(next);
+  updateHistoryButtons();
 });
 
 playPauseBtn.addEventListener("click", async () => {
@@ -287,20 +452,30 @@ timeline.addEventListener("input", () => {
 });
 
 masterVolume.addEventListener("input", () => {
-  store.setMasterVolume(Number(masterVolume.value));
+  runTrackedUpdate(() => {
+    store.setMasterVolume(Number(masterVolume.value));
+  });
 });
 
 globalBypassBtn.addEventListener("click", () => {
-  store.toggleGlobalBypass();
+  runTrackedUpdate(() => {
+    store.toggleGlobalBypass();
+  });
 });
 
 resetBtn.addEventListener("click", () => {
-  store.reset(createDefaultBands());
+  runTrackedUpdate(() => {
+    store.reset(createDefaultBands());
+  });
+  trimDb = 0;
+  engine.setOutputTrimDb(0);
 });
 
 applyPresetBtn.addEventListener("click", () => {
   const preset = getPresetByName(presetSelect.value);
-  store.loadPreset(preset);
+  runTrackedUpdate(() => {
+    store.loadPreset(preset);
+  });
 });
 
 exportPresetBtn.addEventListener("click", () => {
@@ -323,7 +498,9 @@ importPresetInput.addEventListener("change", async () => {
   const text = await file.text();
   try {
     const payload = JSON.parse(text);
-    store.importPreset(payload);
+    runTrackedUpdate(() => {
+      store.importPreset(payload);
+    });
   } catch (error) {
     alert(`No se pudo importar preset: ${error.message}`);
   }
@@ -344,8 +521,10 @@ loadABtn.addEventListener("click", () => {
     return;
   }
   const currentBands = cloneBands(store.getState().bands);
-  maybeLoudnessMatch(currentBands, slotA);
-  store.loadPreset({ name: "A", bands: slotA });
+  runTrackedUpdate(() => {
+    maybeLoudnessMatch(currentBands, slotA);
+    store.loadPreset({ name: "A", bands: slotA });
+  });
 });
 
 loadBBtn.addEventListener("click", () => {
@@ -353,8 +532,10 @@ loadBBtn.addEventListener("click", () => {
     return;
   }
   const currentBands = cloneBands(store.getState().bands);
-  maybeLoudnessMatch(currentBands, slotB);
-  store.loadPreset({ name: "B", bands: slotB });
+  runTrackedUpdate(() => {
+    maybeLoudnessMatch(currentBands, slotB);
+    store.loadPreset({ name: "B", bands: slotB });
+  });
 });
 
 function loadAudioSource(url) {
@@ -452,6 +633,18 @@ dropZone.addEventListener("drop", async (event) => {
     alert(error.message);
   }
 });
+
+autoGain.addEventListener("change", () => {
+  if (autoGain.checked) {
+    return;
+  }
+  trimDb = 0;
+  engine.setOutputTrimDb(0);
+  trimReadout.textContent = dbLabel(0);
+});
+
+updateHistoryButtons();
+trimReadout.textContent = dbLabel(0);
 
 populatePresets();
 drawSpectrumFrame();

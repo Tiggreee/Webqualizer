@@ -60,6 +60,21 @@ body {
   font-size: 13px;
 }
 
+.meter-strip {
+  background: #101622;
+  border: 1px solid var(--edge);
+  border-radius: 6px;
+  padding: 5px 8px;
+  min-width: 112px;
+  justify-content: space-between;
+}
+
+.meter-strip strong {
+  font-family: Consolas, "Courier New", monospace;
+  color: #c8d7ee;
+  font-size: 12px;
+}
+
 .btn {
   border: 1px solid var(--edge);
   background: linear-gradient(180deg, #273146 0%, #1d2431 100%);
@@ -72,6 +87,11 @@ body {
 
 .btn:hover {
   border-color: var(--accent-soft);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .file-label {
