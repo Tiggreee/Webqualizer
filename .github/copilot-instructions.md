@@ -5,6 +5,22 @@ Use the best modern technology that fits the project, but do not overcomplicate 
 Prefer simpler, lighter, and smarter solutions that are maintainable long-term.
 Think about future maintenance and product evolution, not only short-term delivery.
 
+## SOLID Working Method
+
+Apply SOLID, with emphasis on Open/Closed, in every project:
+1. Keep working behavior stable once it is verified by real interaction.
+2. Extend by adding modules, adapters, or layers instead of rewriting stable core flows.
+3. Do not remove or replace existing behavior until its current purpose is understood.
+4. Prefer small, reversible changes with focused validation over broad refactors.
+5. Improve code quality without sacrificing user-proven functionality.
+
+## Skills And Agent Focus
+
+1. Use skills only when the task domain matches exactly (for this environment, mostly GitHub issue/PR workflows).
+2. For product development tasks, prioritize direct code changes and fast validation loops over process-heavy detours.
+3. Use agents as accelerators for exploration, not as a replacement for functional verification in the app.
+4. Before declaring completion, verify critical user flows in behavior terms, not only by static code checks.
+
 ## Incident Log And Prevention Protocol
 
 Purpose: keep explicit memory of situations that reduce trust, so future responses stay practical, complete, and calm.
