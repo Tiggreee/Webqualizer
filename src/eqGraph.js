@@ -30,6 +30,16 @@ export class EqGraph {
     this.bindEvents();
   }
 
+  toCanvasPoint(event) {
+    const rect = this.canvas.getBoundingClientRect();
+    const scaleX = this.canvas.width / rect.width;
+    const scaleY = this.canvas.height / rect.height;
+    return {
+      x: (event.clientX - rect.left) * scaleX,
+      y: (event.clientY - rect.top) * scaleY,
+    };
+  }
+
   bindEvents() {
     this.canvas.addEventListener("pointerdown", (event) => this.onPointerDown(event));
     this.canvas.addEventListener("dblclick", (event) => this.onDoubleClick(event));
@@ -40,7 +50,8 @@ export class EqGraph {
 
     this.canvas.addEventListener("wheel", (event) => {
       event.preventDefault();
-      const band = this.pickBand(event.offsetX, event.offsetY);
+      const point = this.toCanvasPoint(event);
+      const band = this.pickBand(point.x, point.y);
       if (!band) {
         return;
       }
@@ -52,7 +63,8 @@ export class EqGraph {
   }
 
   onPointerDown(event) {
-    const band = this.pickBand(event.offsetX, event.offsetY);
+    const point = this.toCanvasPoint(event);
+    const band = this.pickBand(point.x, point.y);
     if (!band) {
       return;
     }
@@ -65,9 +77,9 @@ export class EqGraph {
       return;
     }
 
-    const rect = this.canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
+    const point = this.toCanvasPoint(event);
+    const x = point.x;
+    const y = point.y;
 
     const state = this.store.getState();
     const band = state.bands.find((entry) => entry.id === this.draggingBandId);
@@ -86,7 +98,8 @@ export class EqGraph {
   }
 
   onDoubleClick(event) {
-    const band = this.pickBand(event.offsetX, event.offsetY);
+    const point = this.toCanvasPoint(event);
+    const band = this.pickBand(point.x, point.y);
     if (!band) {
       return;
     }

@@ -63,32 +63,32 @@ function makeBandRow(band, selectedBandId) {
     <div class="band-row ${selected}" data-band-id="${band.id}">
       <div class="band-head">
         <strong>Band ${band.id}</strong>
-        <label><input type="checkbox" data-action="enabled" ${band.enabled ? "checked" : ""}> On</label>
+        <label title="Activa o desactiva esta banda sin borrarla."><input type="checkbox" data-action="enabled" ${band.enabled ? "checked" : ""}> On</label>
       </div>
       <div class="band-grid">
-        <label class="field">
+        <label class="field" title="Tipo de filtro de la banda: peaking, shelf, pass o notch.">
           <span>Type</span>
-          <select data-action="type">
+          <select data-action="type" title="Selecciona el tipo de filtro para esta banda.">
             ${FILTER_TYPES.map((type) => `<option value="${type}" ${type === band.type ? "selected" : ""}>${type}</option>`).join("")}
           </select>
           <span class="readout"></span>
         </label>
 
-        <label class="field">
+        <label class="field" title="Frecuencia central o corte del filtro en Hz.">
           <span>Freq</span>
-          <input type="range" data-action="frequency" min="20" max="20000" step="1" value="${Math.round(band.frequency)}" />
+          <input type="range" data-action="frequency" min="20" max="20000" step="1" value="${Math.round(band.frequency)}" title="Ajusta la frecuencia de esta banda." />
           <span class="readout">${formatHz(band.frequency)} Hz</span>
         </label>
 
-        <label class="field">
+        <label class="field" title="Ganancia en dB. No aplica para lowpass/highpass.">
           <span>Gain</span>
-          <input type="range" data-action="gain" min="-24" max="24" step="0.1" value="${band.gain.toFixed(1)}" ${["lowpass", "highpass"].includes(band.type) ? "disabled" : ""} />
+          <input type="range" data-action="gain" min="-24" max="24" step="0.1" value="${band.gain.toFixed(1)}" ${["lowpass", "highpass"].includes(band.type) ? "disabled" : ""} title="Sube o baja el nivel de esta banda en dB." />
           <span class="readout">${formatDb(band.gain)} dB</span>
         </label>
 
-        <label class="field">
+        <label class="field" title="Q define el ancho de banda: alto = más estrecho.">
           <span>Q</span>
-          <input type="range" data-action="q" min="0.1" max="18" step="0.01" value="${band.q.toFixed(2)}" />
+          <input type="range" data-action="q" min="0.1" max="18" step="0.01" value="${band.q.toFixed(2)}" title="Controla el ancho de banda (Q)." />
           <span class="readout">${formatQ(band.q)}</span>
         </label>
       </div>
@@ -185,6 +185,9 @@ store.subscribe((state) => {
 
 bandsContainer.addEventListener("input", (event) => {
   const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+    return;
+  }
   const row = target.closest(".band-row");
   if (!row) {
     return;
@@ -193,10 +196,6 @@ bandsContainer.addEventListener("input", (event) => {
   const bandId = Number(row.dataset.bandId);
   const action = target.dataset.action;
 
-  if (action === "enabled") {
-    store.updateBand(bandId, { enabled: target.checked });
-    return;
-  }
   if (action === "frequency") {
     store.updateBand(bandId, { frequency: Number(target.value) });
     return;
@@ -209,12 +208,35 @@ bandsContainer.addEventListener("input", (event) => {
     store.updateBand(bandId, { q: Number(target.value) });
     return;
   }
+});
+
+bandsContainer.addEventListener("change", (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLInputElement || target instanceof HTMLSelectElement)) {
+    return;
+  }
+  const row = target.closest(".band-row");
+  if (!row) {
+    return;
+  }
+
+  const bandId = Number(row.dataset.bandId);
+  const action = target.dataset.action;
+
+  if (action === "enabled") {
+    store.updateBand(bandId, { enabled: target.checked });
+    return;
+  }
   if (action === "type") {
     store.updateBand(bandId, { type: target.value });
   }
 });
 
 bandsContainer.addEventListener("click", (event) => {
+  const controlTarget = event.target;
+  if (controlTarget instanceof Element && controlTarget.closest("input, select, label, button")) {
+    return;
+  }
   const row = event.target.closest(".band-row");
   if (!row) {
     return;
