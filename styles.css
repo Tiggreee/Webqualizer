@@ -250,6 +250,10 @@ input[type="number"] {
   align-items: center;
 }
 
+.field.freq-field {
+  grid-template-columns: 54px 1fr 78px 56px;
+}
+
 .field select,
 .field input[type="number"] {
   background: #0f1520;
@@ -257,6 +261,15 @@ input[type="number"] {
   border: 1px solid var(--edge);
   border-radius: 4px;
   padding: 4px;
+}
+
+.field input[type="text"] {
+  background: #0f1520;
+  color: var(--text);
+  border: 1px solid var(--edge);
+  border-radius: 4px;
+  padding: 4px;
+  width: 100%;
 }
 
 .readout {

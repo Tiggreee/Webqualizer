@@ -49,6 +49,7 @@ let historyBusy = false;
 const HISTORY_LIMIT = 100;
 
 const SPECTRUM_POINTS = 220;
+const FREQ_SLIDER_MAX = 1000;
 let spectrumSmooth = new Float32Array(SPECTRUM_POINTS);
 let preRmsSmooth = -96;
 let postRmsSmooth = -96;
@@ -76,6 +77,44 @@ function dbLabel(value) {
     return "-inf dB";
   }
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)} dB`;
+}
+
+function getFrequencyBounds(type) {
+  switch (type) {
+    case "highpass":
+      return { min: 20, max: 1200 };
+    case "lowpass":
+      return { min: 1500, max: 20000 };
+    case "lowshelf":
+      return { min: 20, max: 2000 };
+    case "highshelf":
+      return { min: 1200, max: 20000 };
+    case "notch":
+      return { min: 40, max: 18000 };
+    default:
+      return { min: 20, max: 20000 };
+  }
+}
+
+function frequencyToSlider(freq, type) {
+  const { min, max } = getFrequencyBounds(type);
+  const minLog = Math.log10(min);
+  const maxLog = Math.log10(max);
+  const clamped = clampValue(freq, min, max);
+  const ratio = (Math.log10(clamped) - minLog) / (maxLog - minLog);
+  return Math.round(clampValue(ratio, 0, 1) * FREQ_SLIDER_MAX);
+}
+
+function sliderToFrequency(sliderValue, type) {
+  const { min, max } = getFrequencyBounds(type);
+  const minLog = Math.log10(min);
+  const maxLog = Math.log10(max);
+  const ratio = clampValue(Number(sliderValue) / FREQ_SLIDER_MAX, 0, 1);
+  return Math.round(10 ** (minLog + ratio * (maxLog - minLog)));
+}
+
+function sanitizeDigits(value) {
+  return String(value ?? "").replace(/[^\d]/g, "");
 }
 
 function snapshotsDiffer(a, b) {
@@ -164,6 +203,8 @@ function populatePresets() {
 
 function makeBandRow(band, selectedBandId) {
   const selected = band.id === selectedBandId ? "active" : "";
+  const freqBounds = getFrequencyBounds(band.type);
+  const sliderValue = frequencyToSlider(band.frequency, band.type);
 
   return `
     <div class="band-row ${selected}" data-band-id="${band.id}">
@@ -180,9 +221,10 @@ function makeBandRow(band, selectedBandId) {
           <span class="readout"></span>
         </label>
 
-        <label class="field" title="Frecuencia central o corte del filtro en Hz.">
+        <label class="field freq-field" title="Frecuencia central o corte del filtro en Hz (escala log para mayor precisión).">
           <span>Freq</span>
-          <input type="range" data-action="frequency" min="20" max="20000" step="1" value="${Math.round(band.frequency)}" title="Ajusta la frecuencia de esta banda." />
+          <input type="range" data-action="frequency" min="0" max="${FREQ_SLIDER_MAX}" step="1" value="${sliderValue}" title="Ajusta la frecuencia de esta banda con curva logarítmica." />
+          <input type="text" data-action="frequencyText" inputmode="numeric" pattern="[0-9]*" value="${Math.round(band.frequency)}" title="Escribe Hz manualmente. Solo números." />
           <span class="readout">${formatHz(band.frequency)} Hz</span>
         </label>
 
@@ -331,8 +373,21 @@ bandsContainer.addEventListener("input", (event) => {
 
   if (action === "frequency") {
     runTrackedUpdate(() => {
-      store.updateBand(bandId, { frequency: Number(target.value) });
+      const state = store.getState();
+      const band = state.bands.find((entry) => entry.id === bandId);
+      if (!band) {
+        return;
+      }
+      const frequency = sliderToFrequency(target.value, band.type);
+      store.updateBand(bandId, { frequency });
     });
+    return;
+  }
+  if (action === "frequencyText") {
+    const sanitized = sanitizeDigits(target.value);
+    if (target.value !== sanitized) {
+      target.value = sanitized;
+    }
     return;
   }
   if (action === "gain") {
@@ -370,7 +425,30 @@ bandsContainer.addEventListener("change", (event) => {
   }
   if (action === "type") {
     runTrackedUpdate(() => {
-      store.updateBand(bandId, { type: target.value });
+      const state = store.getState();
+      const band = state.bands.find((entry) => entry.id === bandId);
+      if (!band) {
+        return;
+      }
+      const bounds = getFrequencyBounds(target.value);
+      const frequency = clampValue(band.frequency, bounds.min, bounds.max);
+      store.updateBand(bandId, { type: target.value, frequency });
+    });
+    return;
+  }
+  if (action === "frequencyText") {
+    runTrackedUpdate(() => {
+      const state = store.getState();
+      const band = state.bands.find((entry) => entry.id === bandId);
+      if (!band) {
+        return;
+      }
+      const bounds = getFrequencyBounds(band.type);
+      const raw = sanitizeDigits(target.value);
+      const fallback = Math.round(band.frequency);
+      const parsed = raw.length === 0 ? fallback : Number.parseInt(raw, 10);
+      const frequency = clampValue(parsed, bounds.min, bounds.max);
+      store.updateBand(bandId, { frequency });
     });
   }
 });
